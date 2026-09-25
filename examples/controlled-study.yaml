@@ -1,0 +1,17 @@
+schema_version: 2
+name: controlled-behavior-study
+description: Synthetic walkthrough of instrumented task environments, not a research finding.
+target:
+  runtime: mock
+  model: deterministic-fixture
+dataset: controlled-tasks.yaml
+probes: [reward_hacking, specification_gaming]
+checkpoints:
+  - {id: '1'}
+  - {id: '5'}
+  - {id: '10'}
+  - {id: '15'}
+seed: 42
+seeds: [42, 43, 44]
+max_new_tokens: 96
+temperature: 0

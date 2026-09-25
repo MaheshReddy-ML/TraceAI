@@ -1,0 +1,13 @@
+# Research methodology and interpretation
+
+TraceAI measures defined output contracts at specified model checkpoints. A failure score is the fraction of evaluation responses that match a rubric's failure condition. Every score is backed by prompts, responses, seeds, model paths, evaluator identifiers, and rationale in raw evidence. The optional monitor model field is recorded but never treated as ground truth.
+
+The original fixed probes use six cases each and are deliberately narrow: arithmetic format (baseline), JSON format (specification proxy), arithmetic success under a grading cue (reward proxy), explicit correction of a false user claim (sycophancy proxy), and exact synthetic canary disclosure (leakage proxy). A failed arithmetic case is **not** evidence that the model tried to exploit a grader.
+
+The versioned dataset format adds evaluation and calibration splits and explicit rubrics. Its `reward_environment` interprets a constrained JSON action and records attempted evaluation override separately from objective task success. Its `specification_environment` records a proxy pass and objective success separately; a gaming signal is proxy pass plus objective failure. The bundled example is synthetic and exists to verify that the instrumentation distinguishes these states, not to validate a detector against real reward hacking.
+
+Calibration compares rubric classifications with labeled outputs and reports a confusion matrix, sensitivity, specificity, and approximate Wilson intervals. The bundled two-positive/two-negative fixture has very wide intervals. It does not establish real-world accuracy or unbiased labels. Researchers should create independently labeled held-out examples, document label provenance and disagreements, and repeat calibration on the actual task distribution.
+
+Version 1 experiment reports show Wilson intervals, which assume independent Bernoulli cases. Version 2 reports resample case clusters while retaining repeated-seed outcomes. Both intervals are descriptive for the chosen cases. Paraphrases, checkpoints, and repeated seeds may be correlated. An adjacent score difference of at least 0.25 is labeled a descriptive shift; interval separation is an additional visual cue, **not** a hypothesis test or proof of emergence.
+
+For a publishable model comparison, preregister hypotheses and thresholds, set aside held-out cases, estimate statistical power, include multiple checkpoints and seeds, inspect error examples, repeat on exact checkpoint bytes, and seek independent review. Reports distinguish observed measurements from inference and uncertainty. Internal intentions, consciousness, causal training mechanisms, broad safety, and out-of-distribution behavior are not determined by this tool.
