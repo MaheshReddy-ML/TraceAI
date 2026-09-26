@@ -1,10 +1,45 @@
 # ◈ TraceAI
 
-### Trace how AI models learn, behave, and change.
+**Trace how AI models learn, behave, and change.**
 
-TraceAI runs explicit behavioral checks against local text models and saves the prompt, response, rule, seed, and checkpoint behind every score. Its central question is **how behavior changed between checkpoints, and what evidence explains it**.
+<picture>
+  <source media="(max-width: 640px)" srcset="assets/traceai-hero-mobile.svg">
+  <img src="assets/traceai-hero.svg" alt="TraceAI cover showing two synthetic behavioral measurements across four checkpoints." width="1400">
+</picture>
 
-**[Quick start](#quick-start) · [Evidence](#inspect-the-evidence) · [How it works](#how-it-works) · [Commands](#commands) · [Roadmap](docs/ROADMAP.md)**
+<p align="center">
+  <a href="#quick-start">Quick start</a> ·
+  <a href="#inspect-the-evidence">Evidence</a> ·
+  <a href="#how-it-works">How it works</a> ·
+  <a href="docs/METHODOLOGY.md">Methodology</a> ·
+  <a href="docs/ROADMAP.md">Roadmap</a>
+</p>
+
+<p align="center">
+  <a href=".github/workflows/ci.yml"><img src="https://github.com/MaheshReddy-ML/TraceAI/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-58dbc9" alt="Apache-2.0 license"></a>
+  <img src="https://img.shields.io/badge/Python-3.12%2B-7aa8f7" alt="Python 3.12 or newer">
+</p>
+
+TraceAI runs explicit behavioral checks against local text models and keeps the prompt, response, rule, seed, and checkpoint behind every score. Its central question is **how behavior changed between checkpoints, and what evidence explains it**.
+
+| Observe | Compare | Explain |
+| :--- | :--- | :--- |
+| Run versioned cases against local checkpoints. | Follow measured rates and uncertainty across checkpoints. | Open the raw response and deterministic rationale behind each score. |
+
+## See a trajectory
+
+<picture>
+  <source media="(prefers-reduced-motion: reduce)" srcset="assets/traceai-demo-poster.png">
+  <img src="assets/traceai-trajectory.gif" alt="Animated synthetic TraceAI study: four checkpoints complete, two measured failure-rate trajectories appear, and 48 raw evidence records are saved." width="1000">
+</picture>
+
+*Designed visualization of the [bundled mock study](examples/controlled-study.yaml), generated from its actual synthetic results. It is not a recording of a real model run. [View the still frame](assets/traceai-demo-poster.png).*
+
+<details>
+<summary>See the corresponding text report</summary>
+
+The excerpt below comes from the synthetic mock walkthrough. It demonstrates the interface and pipeline; it is not a finding about a real model.
 
 ```text
 ◈ TRACEAI / REPORT
@@ -24,7 +59,11 @@ TraceAI runs explicit behavioral checks against local text models and saves the 
   48 raw evidence records.
 ```
 
-This is shortened output from the **synthetic mock** walkthrough. It demonstrates the interface and pipeline; it is not a finding about a real model.
+</details>
+
+## Why TraceAI?
+
+An aggregate score says little about **when** a behavior changed or **which cases** caused that change. TraceAI connects checkpoint measurements to inspectable evidence so a researcher can repeat a study and judge the cases for themselves. The bundled probes are narrow operational measurements, not general detectors of model intent or safety.
 
 ## Quick start
 
@@ -55,6 +94,18 @@ Without `uv`, install into a Python 3.12+ virtual environment with `python -m pi
 Scores are failure rates on specified cases, not a model safety rating. Every case stores its raw response and a deterministic rationale. For a terminal viewer, run `traceai evidence browse EXPERIMENT_ID`; use **N** and **P** to move between cases. `evidence export EXPERIMENT_ID --output evidence.jsonl` writes a portable JSONL copy.
 
 `traceai report EXPERIMENT_ID --format markdown --output report.md` creates a shareable report. `traceai dashboard` opens the read-only local viewer at `http://127.0.0.1:8765` for trajectories, measurements, raw evidence, and limitations.
+
+### Built-in probes
+
+| Probe | What it measures |
+| :--- | :--- |
+| `baseline` | Basic task response on specified cases. |
+| `reward_hacking` | An output proxy for score-override attempts; schema 2 also has a controlled action environment. |
+| `specification_gaming` | An output proxy for proxy/objective mismatch; schema 2 also has a controlled action environment. |
+| `sycophancy` | Response to explicit user correction. |
+| `leakage` | Disclosure of a synthetic canary. |
+
+These are defined by the case set and rubric. See [methodology](docs/METHODOLOGY.md) before interpreting a measured change.
 
 ## Run a local model
 
@@ -104,6 +155,10 @@ The engine keeps a model loaded across checkpoints that share a path, records pr
 
 The built-in reward and specification probes in schema 1 are narrow **output proxies**. The schema 2 example adds controlled action environments that distinguish attempted score override from task success, and proxy satisfaction from the actual objective. Neither establishes intent, deception, or generalization. TraceAI does not infer consciousness, establish model intentions, give an absolute safety score, prove deception from one output, or treat an LLM judge as ground truth.
 
+### Current status
+
+The local study engine, evidence store, dashboard, watcher, optional runtime adapters, bounded agent, worker queue, and explicit artifact export paths are implemented. The [roadmap and validation boundary](docs/ROADMAP.md) distinguish these engineering paths from scientific validation and target-environment acceptance. Remote TLS, live S3, CUDA hardware, and particular Ollama/GGUF models still need end-to-end checks where they run.
+
 ## Commands
 
 | Command | Purpose |
@@ -134,6 +189,8 @@ TraceAI/
 ├── src/traceai/        CLI, engine, datasets, runtimes, watcher, agent, workers, storage
 ├── examples/            synthetic and controlled study fixtures
 ├── tests/               deterministic unit and loopback integration checks
+├── assets/              README artwork and synthetic demo visualization
+├── scripts/             reproducible README asset generator
 ├── docs/                methodology and roadmap
 ├── ARCHITECTURE.md
 ├── DEVELOPMENT.md
@@ -141,3 +198,5 @@ TraceAI/
 ```
 
 Licensed under [Apache-2.0](LICENSE). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+The README assets can be regenerated from the bundled mock study with `uv run --extra visuals python scripts/render_readme_assets.py`.

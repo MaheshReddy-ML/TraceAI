@@ -18,6 +18,7 @@ mlx = ["mlx-lm>=0.20; platform_system == 'Darwin' and platform_machine == 'arm64
 s3 = ["boto3>=1.35,<2"]
 llama_cpp = ["llama-cpp-python>=0.3,<1"]
 dev = ["pytest>=8", "ruff>=0.8"]
+visuals = ["Pillow>=11,<13"]
 
 [project.scripts]
 traceai = "traceai.cli:main"
