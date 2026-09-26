@@ -11,7 +11,7 @@ import tempfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageOps
 
 from traceai.engine import Experiment
 
@@ -25,6 +25,106 @@ MUTED = "#9eb4bf"
 CYAN = "#58dbc9"
 AMBER = "#ffc16a"
 BLUE = "#7aa8f7"
+
+
+def cover_font(size: int, *, bold: bool = False, mono: bool = False):
+    if mono:
+        candidates = [
+            ("/System/Library/Fonts/SFNSMono.ttf", 0),
+            ("/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf", 0),
+        ]
+    elif bold:
+        candidates = [
+            ("/System/Library/Fonts/Avenir Next.ttc", 0),
+            ("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 0),
+        ]
+    else:
+        candidates = [
+            ("/System/Library/Fonts/Avenir Next.ttc", 5),
+            ("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 0),
+        ]
+    for path, index in candidates:
+        if Path(path).is_file():
+            return ImageFont.truetype(path, size, index=index)
+    return ImageFont.load_default(size)
+
+
+def draw_cover_mark(draw: ImageDraw.ImageDraw, x: int, y: int, size: int):
+    half = size // 2
+    draw.polygon(
+        [(x + half, y), (x + size, y + half), (x + half, y + size), (x, y + half)],
+        outline=CYAN,
+        width=4,
+    )
+    draw.line((x + size // 4, y + half, x + size * 3 // 4, y + half), fill=CYAN, width=4)
+
+
+def render_covers():
+    source = Image.open(ASSETS / "traceai-instrument-background.jpg").convert("RGB")
+    if source.size != (2172, 724):
+        raise RuntimeError("README cover artwork must be 2172×724")
+
+    desktop = source.copy()
+    d = ImageDraw.Draw(desktop)
+    draw_cover_mark(d, 125, 92, 52)
+    d.text((207, 96), "TRACEAI", font=cover_font(42, bold=True), fill=WHITE)
+    d.text((129, 195), "AI BEHAVIOR OBSERVATORY", font=cover_font(25, mono=True), fill=CYAN)
+    title = cover_font(112, bold=True)
+    d.text((118, 261), "Behavior has", font=title, fill=WHITE)
+    second = "a trajectory"
+    d.text((118, 381), second, font=title, fill=WHITE)
+    second_end = d.textbbox((118, 381), second, font=title)[2]
+    d.text((second_end + 1, 381), ".", font=title, fill=AMBER)
+    d.text(
+        (126, 545),
+        "Follow the evidence behind every checkpoint.",
+        font=cover_font(35),
+        fill="#c3d0d5",
+    )
+    d.line((128, 635, 1000, 635), fill="#2a4b57", width=2)
+    d.text(
+        (128, 656),
+        "01  OBSERVE      02  COMPARE      03  EXPLAIN",
+        font=cover_font(25, mono=True),
+        fill=CYAN,
+    )
+    desktop.save(ASSETS / "traceai-cover-v2.jpg", quality=93, subsampling=0, optimize=True)
+
+    mobile = Image.new("RGB", (720, 900), INK)
+    art = ImageOps.fit(
+        source.crop((950, 0, 2172, 724)), (720, 465), method=Image.Resampling.LANCZOS
+    )
+    fade = Image.new("L", art.size, 255)
+    fade_data = ImageDraw.Draw(fade)
+    for y in range(355, 465):
+        opacity = round(255 * (465 - y) / 110)
+        fade_data.line((0, y, 720, y), fill=opacity)
+    mobile.paste(art, (0, 0), fade)
+    m = ImageDraw.Draw(mobile)
+    m.rounded_rectangle((30, 28, 289, 110), radius=18, fill=INK, outline="#2a4b57", width=2)
+    draw_cover_mark(m, 47, 45, 43)
+    m.text((113, 47), "TRACEAI", font=cover_font(36, bold=True), fill=WHITE)
+    m.text((49, 458), "AI BEHAVIOR OBSERVATORY", font=cover_font(20, mono=True), fill=CYAN)
+    mobile_title = cover_font(76, bold=True)
+    m.text((42, 510), "Behavior has", font=mobile_title, fill=WHITE)
+    second = "a trajectory"
+    m.text((42, 591), second, font=mobile_title, fill=WHITE)
+    second_end = m.textbbox((42, 591), second, font=mobile_title)[2]
+    m.text((second_end + 1, 591), ".", font=mobile_title, fill=AMBER)
+    m.text(
+        (48, 714),
+        "Evidence behind every checkpoint.",
+        font=cover_font(29),
+        fill="#c3d0d5",
+    )
+    m.line((49, 791, 669, 791), fill="#2a4b57", width=2)
+    m.text(
+        (49, 815),
+        "OBSERVE  /  COMPARE  /  EXPLAIN",
+        font=cover_font(22, mono=True),
+        fill=CYAN,
+    )
+    mobile.save(ASSETS / "traceai-cover-mobile-v2.jpg", quality=92, subsampling=0, optimize=True)
 
 
 def study():
@@ -170,6 +270,78 @@ def render_mobile_hero(checkpoints, values, count):
     (ASSETS / "traceai-hero-mobile.svg").write_text(svg, encoding="utf-8")
 
 
+def render_pipeline():
+    stages = [
+        ("01", "DESIGN", "Cases · seeds", "Versioned study"),
+        ("02", "EXECUTE", "Local runtime", "Model checkpoint"),
+        ("03", "MEASURE", "Raw response", "Deterministic rule"),
+        ("04", "TRACE", "Failure rates", "Bootstrap intervals"),
+        ("05", "INSPECT", "CLI · dashboard", "Evidence export"),
+    ]
+    cards = []
+    for index, (number, title, first, second) in enumerate(stages):
+        x = 52 + index * 266
+        accent = AMBER if index == 3 else CYAN
+        cards.append(
+            f'<g><rect x="{x}" y="139" width="236" height="201" rx="16" '
+            f'fill="{PANEL}" stroke="{LINE}"/>'
+            f'<path d="M{x + 22} 181h30" stroke="{accent}" stroke-width="3"/>'
+            f'<text x="{x + 62}" y="187" class="mono tag" fill="{accent}">{number}</text>'
+            f'<text x="{x + 22}" y="235" class="sans title" fill="{WHITE}">{title}</text>'
+            f'<text x="{x + 22}" y="278" class="sans body" fill="{MUTED}">{escape(first)}</text>'
+            f'<text x="{x + 22}" y="308" class="sans body" fill="{MUTED}">{escape(second)}</text>'
+            "</g>"
+        )
+    arrows = "".join(
+        f'<path d="M{288 + index * 266} 239h28m-8-7 8 7-8 7" '
+        f'stroke="{CYAN}" stroke-width="2" fill="none"/>'
+        for index in range(4)
+    )
+    desktop = f'''<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="430" viewBox="0 0 1400 430" role="img" aria-labelledby="title desc">
+<title id="title">TraceAI evidence pipeline</title>
+<desc id="desc">Design a versioned study, execute a local model checkpoint, measure raw responses with deterministic rules, trace rates and intervals, and inspect evidence in the CLI or dashboard.</desc>
+<style>.sans{{font-family:Arial,Helvetica,sans-serif}}.mono{{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}}.tag{{font-size:17px;letter-spacing:2px}}.title{{font-size:26px;font-weight:700;letter-spacing:1px}}.body{{font-size:19px}}</style>
+<rect width="1400" height="430" rx="24" fill="{INK}"/>
+<path d="M0 81h1400M0 373h1400" stroke="{LINE}"/>
+<text x="52" y="54" class="mono" font-size="17" fill="{CYAN}">TRACEAI / EVIDENCE CHAIN</text>
+<text x="1348" y="54" text-anchor="end" class="mono" font-size="15" fill="{MUTED}">FROM CASE TO EVIDENCE</text>
+{"".join(cards)}{arrows}
+<text x="52" y="405" class="mono" font-size="15" fill="{MUTED}">CASE  →  PROMPT  →  RESPONSE  →  RULE  →  SCORE</text>
+<text x="1348" y="405" text-anchor="end" class="mono" font-size="15" fill="{MUTED}">LOCAL FIRST · RAW EVIDENCE SAVED</text>
+</svg>'''
+    (ASSETS / "traceai-pipeline.svg").write_text(desktop, encoding="utf-8")
+
+    mobile_cards = []
+    for index, (number, title, first, second) in enumerate(stages):
+        y = 121 + index * 151
+        accent = AMBER if index == 3 else CYAN
+        mobile_cards.append(
+            f'<g><rect x="36" y="{y}" width="648" height="126" rx="16" '
+            f'fill="{PANEL}" stroke="{LINE}"/>'
+            f'<text x="65" y="{y + 49}" class="mono" font-size="23" fill="{accent}">{number}</text>'
+            f'<text x="123" y="{y + 50}" class="sans" font-size="30" font-weight="700" fill="{WHITE}">{title}</text>'
+            f'<text x="123" y="{y + 91}" class="sans" font-size="23" fill="{MUTED}">{escape(first)}  ·  {escape(second)}</text>'
+            "</g>"
+        )
+    mobile_arrows = "".join(
+        f'<path d="M360 {247 + index * 151}v22m-7-8 7 8 7-8" '
+        f'stroke="{CYAN}" stroke-width="2" fill="none"/>'
+        for index in range(4)
+    )
+    mobile = f'''<svg xmlns="http://www.w3.org/2000/svg" width="720" height="930" viewBox="0 0 720 930" role="img" aria-labelledby="title desc">
+<title id="title">TraceAI evidence pipeline</title>
+<desc id="desc">Five stages from study design through local execution, measurement, trajectory analysis, and evidence inspection.</desc>
+<style>.sans{{font-family:Arial,Helvetica,sans-serif}}.mono{{font-family:ui-monospace,SFMono-Regular,Consolas,monospace}}</style>
+<rect width="720" height="930" rx="24" fill="{INK}"/>
+<text x="36" y="55" class="mono" font-size="21" fill="{CYAN}">TRACEAI / EVIDENCE CHAIN</text>
+<text x="36" y="88" class="mono" font-size="16" fill="{MUTED}">FROM CASE TO EVIDENCE</text>
+{"".join(mobile_cards)}{mobile_arrows}
+<path d="M36 888h648" stroke="{LINE}"/>
+<text x="36" y="911" class="mono" font-size="16" fill="{MUTED}">LOCAL FIRST  ·  RAW EVIDENCE SAVED</text>
+</svg>'''
+    (ASSETS / "traceai-pipeline-mobile.svg").write_text(mobile, encoding="utf-8")
+
+
 def find_font(mono: bool, size: int):
     choices = (
         [
@@ -303,8 +475,10 @@ def render_frame(checkpoints, values, visible: float):
 def main():
     ASSETS.mkdir(exist_ok=True)
     checkpoints, values, report = study()
+    render_covers()
     render_hero(checkpoints, values, len(report.evidence))
     render_mobile_hero(checkpoints, values, len(report.evidence))
+    render_pipeline()
     timeline = (
         [4.0] * 5
         + [0.15] * 3
@@ -330,8 +504,12 @@ def main():
         disposal=2,
     )
     for name in (
+        "traceai-cover-v2.jpg",
+        "traceai-cover-mobile-v2.jpg",
         "traceai-hero.svg",
         "traceai-hero-mobile.svg",
+        "traceai-pipeline.svg",
+        "traceai-pipeline-mobile.svg",
         "traceai-trajectory.gif",
         "traceai-demo-poster.png",
     ):

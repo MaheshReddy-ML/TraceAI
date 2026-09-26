@@ -3,8 +3,8 @@
 **Trace how AI models learn, behave, and change.**
 
 <picture>
-  <source media="(max-width: 640px)" srcset="assets/traceai-hero-mobile.svg">
-  <img src="assets/traceai-hero.svg" alt="TraceAI cover showing two synthetic behavioral measurements across four checkpoints." width="1400">
+  <source media="(max-width: 640px)" srcset="assets/traceai-cover-mobile-v2.jpg">
+  <img src="assets/traceai-cover-v2.jpg" alt="TraceAI: Behavior has a trajectory. A scientific instrument illustration accompanies the message to follow evidence behind every checkpoint." width="2172">
 </picture>
 
 <p align="center">
@@ -21,7 +21,7 @@
   <img src="https://img.shields.io/badge/Python-3.12%2B-7aa8f7" alt="Python 3.12 or newer">
 </p>
 
-TraceAI runs explicit behavioral checks against local text models and keeps the prompt, response, rule, seed, and checkpoint behind every score. Its central question is **how behavior changed between checkpoints, and what evidence explains it**.
+**Most evaluations return a score. TraceAI returns a trail.** It runs explicit behavioral checks against local text models and keeps the prompt, response, rule, seed, and checkpoint behind every score. Its central question is **how behavior changed between checkpoints, and what evidence explains it**.
 
 | Observe | Compare | Explain |
 | :--- | :--- | :--- |
@@ -34,7 +34,7 @@ TraceAI runs explicit behavioral checks against local text models and keeps the 
   <img src="assets/traceai-trajectory.gif" alt="Animated synthetic TraceAI study: four checkpoints complete, two measured failure-rate trajectories appear, and 48 raw evidence records are saved." width="1000">
 </picture>
 
-*Designed visualization of the [bundled mock study](examples/controlled-study.yaml), generated from its actual synthetic results. It is not a recording of a real model run. [View the still frame](assets/traceai-demo-poster.png).*
+*Designed visualization of the [bundled mock study](examples/controlled-study.yaml), generated from its actual synthetic results. It is not a recording of a real model run. [View the still frame](assets/traceai-demo-poster.png) or the [data-only vector chart](assets/traceai-hero.svg).*
 
 <details>
 <summary>See the corresponding text report</summary>
@@ -139,6 +139,16 @@ Validate it with `traceai config validate study.yaml` and run it with `traceai e
 
 ## How it works
 
+<picture>
+  <source media="(max-width: 640px)" srcset="assets/traceai-pipeline-mobile.svg">
+  <img src="assets/traceai-pipeline.svg" alt="TraceAI evidence chain: design a versioned study, execute local checkpoints, measure raw responses using deterministic rules, trace failure rates with bootstrap intervals, then inspect and export evidence." width="1400">
+</picture>
+
+The core path is **case → prompt → response → rule → score**, with the original case and response retained for inspection.
+
+<details>
+<summary>View the full system flow, including optional workers and artifact export</summary>
+
 ```mermaid
 flowchart LR
   A[Versioned study + dataset] --> B[Experiment engine]
@@ -150,6 +160,8 @@ flowchart LR
   H[Authenticated worker queue] --> B
   E --> I[Optional S3 artifact export]
 ```
+
+</details>
 
 The engine keeps a model loaded across checkpoints that share a path, records provenance and timings, and writes each completed checkpoint in one transaction. Schema 2 studies can repeat seeds, use task action environments, and show case-cluster bootstrap intervals. Adjacent changes are **descriptive** and require inspection of their evidence. A file watcher can add stable checkpoint directories to an experiment; failed runs can resume with `traceai experiment run study.yaml --resume ID`.
 
@@ -199,4 +211,4 @@ TraceAI/
 
 Licensed under [Apache-2.0](LICENSE). Contributions: [CONTRIBUTING.md](CONTRIBUTING.md).
 
-The README assets can be regenerated from the bundled mock study with `uv run --extra visuals python scripts/render_readme_assets.py`.
+The README covers use original generated instrument artwork with text composed separately for clarity. The charts and animation are generated from the bundled synthetic study. Regenerate the composed assets with `uv run --extra visuals python scripts/render_readme_assets.py`.
