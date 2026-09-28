@@ -1,6 +1,6 @@
 # Roadmap and implementation status
 
-TraceAI 0.2 implements the local observability foundation and the six engineering workstreams that followed version 0.1. The checkmarks below mean the specified code paths and local fixtures exist; they do **not** mean every optional runtime or external service was exercised in this environment.
+TraceAI 0.2 implements the local observability foundation and subsequent engineering workstreams. The checkmarks below mean the specified code paths and local fixtures exist; they do **not** mean every optional runtime or external service was exercised in this environment.
 
 - [x] **Evaluation design:** versioned YAML case datasets, separate calibration examples, deterministic rubrics, repeated seeds, case-cluster bootstrap intervals, and controlled reward/specification action environments. The bundled labels are synthetic. Independent labeled data, statistical power, and external validity remain study-specific responsibilities.
 - [x] **Incremental checkpoints:** stable-file fingerprinting, sharded-weight completeness checks, a watch session, failed-run resume, same-path model reuse, a single-run project lock, and a maximum local weight-size setting. The watcher refuses changed checkpoints after evaluation; it does not replace an atomic checkpoint writer.
@@ -8,6 +8,7 @@ TraceAI 0.2 implements the local observability foundation and the six engineerin
 - [x] **Bounded agent:** workspace-confined file access, a fixed research command set, and separate opt-ins for model runs and git provenance subprocesses. It does not plan with an LLM or execute arbitrary shell commands.
 - [x] **Extension and migration path:** explicitly selected probe/runtime entry points, plugin contract tests, SQLite migration to storage schema 2, and an optional local GGUF runtime alongside MLX, Transformers, Ollama, and mock.
 - [x] **Worker and artifact infrastructure:** SQLite job queue, authenticated coordinator, opt-in worker with local model-root confinement, TLS requirement for non-loopback traffic, retry of failed or abandoned jobs, and explicit S3 evidence/report export. Independent experiments can run on separate workers. Checkpoint-level distributed execution and autoscaling are outside this implementation.
+- [x] **Model development experience:** a synthetic dataset template to edit, guided setup for an existing local model and distinct checkpoints, a read-only evidence guide for saved runs, and checkpoint-based live terminal progress with motion and color opt-outs. Setup does not train a model or validate a scientific result; those remain the user's workflow and study design.
 
 ## Validation boundary
 

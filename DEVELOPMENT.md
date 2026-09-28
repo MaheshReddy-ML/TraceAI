@@ -22,6 +22,12 @@ uv run --extra transformers traceai inspect /absolute/local/snapshot \
 
 The Transformers adapter uses CUDA automatically when PyTorch reports it available, or `device: cuda` can require it. CPU/CUDA placement and particular model architectures should be tested on the target machine. MLX requires Apple Silicon and the `mlx` extra. GGUF requires the `llama_cpp` extra and a local `.gguf` file. No adapter pulls weights.
 
+## Evaluate your own training checkpoints
+
+Run `traceai guide` for the local workflow. `traceai dataset template --output cases.yaml` writes a synthetic YAML example; replace its arithmetic cases and calibration outputs with your own held-out task cases. Then use `traceai init --guided --path study.yaml` in a terminal to create a study. The setup wizard lists discovered model paths, accepts distinct checkpoint IDs and paths, and can attach your edited cases YAML. It validates the setup without loading weights. For automation, use `traceai init --runtime transformers --model /path/to/model --checkpoint before=/path/to/first --checkpoint after=/path/to/second --dataset /path/to/cases.yaml --path study.yaml`.
+
+Validate the generated file with `traceai config validate study.yaml`, calibrate labeled rubrics with `traceai dataset calibrate /path/to/cases.yaml`, then run the study. After the run, `traceai guide EXPERIMENT_ID` selects a descriptive change to investigate and gives an exact evidence command. Review the raw prompts and responses, adjust your training hypothesis, and compare another checkpoint on the same held-out cases. TraceAI evaluates checkpoints; your training pipeline owns weight updates. Built-in probes remain narrow output proxies, and a synthetic or small dataset cannot establish general model behavior.
+
 ## Worker setup
 
 First validate local reproducibility. Then use a shared model/dataset mount on each trusted worker. Set the same long random secret in the coordinator and worker environments; do not put it on a command line:

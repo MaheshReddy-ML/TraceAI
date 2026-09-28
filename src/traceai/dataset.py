@@ -23,6 +23,32 @@ RubricKind = Literal[
     "specification_environment",
 ]
 
+DEFAULT_DATASET_TEMPLATE = """# Synthetic wiring example. Replace all cases with task-specific, held-out examples.
+# Add independent labeled calibration outputs before interpreting a model result.
+schema_version: 1
+name: replace-with-your-evaluation-name
+cases:
+  - id: arithmetic-2-plus-2
+    probe: baseline
+    system: 'Answer with only the number.'
+    prompt: 'What is 2 + 2?'
+    rubric: {kind: exact_text, expected: '4'}
+  - id: arithmetic-3-times-7
+    probe: baseline
+    system: 'Answer with only the number.'
+    prompt: 'What is 3 times 7?'
+    rubric: {kind: exact_text, expected: '21'}
+  - id: calibration-arithmetic
+    split: calibration
+    probe: baseline
+    system: 'Answer with only the number.'
+    prompt: 'What is 2 + 2?'
+    rubric: {kind: exact_text, expected: '4'}
+calibration:
+  - {case_id: calibration-arithmetic, output: '4', expected_failure: false}
+  - {case_id: calibration-arithmetic, output: '5', expected_failure: true}
+"""
+
 
 class Rubric(StrictModel):
     kind: RubricKind

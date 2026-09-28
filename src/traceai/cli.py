@@ -6,20 +6,23 @@ import argparse
 import json
 import logging
 import os
+import shlex
 import sys
 from contextlib import nullcontext
 from pathlib import Path
 
 from traceai.config import DEFAULT_EXPERIMENT, load_config
-from traceai.dataset import calibrate, load_dataset
+from traceai.dataset import DEFAULT_DATASET_TEMPLATE, calibrate, load_dataset
 from traceai.engine import Experiment
 from traceai.errors import ConfigurationError, TraceAIError
+from traceai.guidance import report_guidance, setup_guidance
 from traceai.hardware import inspect_hardware
 from traceai.probes import PROBES
 from traceai.reporting import render_markdown, render_terminal
 from traceai.runtimes import create_runtime, discover_models, runtime_status
 from traceai.schemas import Capability, CheckpointSpec, GenerationRequest, ModelSpec
 from traceai.storage import SQLiteRepository
+from traceai.study_setup import build_model_study
 from traceai.terminal import TerminalUI
 from traceai.version import __version__
 
@@ -33,15 +36,26 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--quiet", action="store_true", help="suppress progress and success text")
     parser.add_argument("--verbose", action="store_true", help="show debug logs")
     parser.add_argument("--no-color", action="store_true", help="disable terminal colors")
+    parser.add_argument("--no-animate", action="store_true", help="disable live terminal motion")
     parser.add_argument(
         "--project", type=Path, default=Path(".traceai"), help="project storage directory"
     )
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("models", help="discover local model snapshots and Ollama tags")
     sub.add_parser("doctor", help="diagnose local runtimes and hardware")
+    guide = sub.add_parser("guide", help="get concrete next steps for a model study")
+    guide.add_argument("id", nargs="?", help="saved experiment ID to investigate")
     sub.add_parser("version", help="print TraceAI version")
     init = sub.add_parser("init", help="create experiment.yaml and project storage")
     init.add_argument("--path", type=Path, default=Path("experiment.yaml"))
+    init.add_argument("--guided", action="store_true", help="build a model study interactively")
+    init.add_argument("--runtime", choices=["transformers", "mlx", "llama_cpp", "ollama"])
+    init.add_argument("--model", help="local model path or Ollama tag")
+    init.add_argument("--checkpoint", action="append", default=[], metavar="ID=MODEL")
+    init.add_argument("--dataset", type=Path, help="versioned cases YAML for your model")
+    init.add_argument("--probe", action="append", help="selected built-in or installed probe")
+    init.add_argument("--seed", type=int, help="sampling seed (default: 42)")
+    init.add_argument("--device", choices=["auto", "cpu", "cuda"], default="auto")
     inspect = sub.add_parser("inspect", help="inspect an installed model path or identifier")
     inspect.add_argument("model")
     inspect.add_argument("--runtime", choices=["transformers", "training_state"])
@@ -108,6 +122,8 @@ def _parser() -> argparse.ArgumentParser:
     for action in ("validate", "calibrate"):
         item = dataset_sub.add_parser(action)
         item.add_argument("file", type=Path)
+    dataset_template = dataset_sub.add_parser("template", help="write a synthetic cases template")
+    dataset_template.add_argument("--output", type=Path, required=True)
     watch = sub.add_parser("watch", help="evaluate stable checkpoints as they appear")
     watch.add_argument("directory", type=Path)
     watch.add_argument("--config", type=Path, required=True)
@@ -169,11 +185,11 @@ def _emit(value, args, human: str | None = None) -> None:
         print(human if human is not None else value)
 
 
-def _create_file(path: Path) -> None:
+def _create_file(path: Path, content: str = DEFAULT_EXPERIMENT) -> None:
     if path.exists():
         raise ConfigurationError(f"{path} already exists; choose a different path")
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(DEFAULT_EXPERIMENT, encoding="utf-8")
+    path.write_text(content, encoding="utf-8")
 
 
 def _comparison(repository: SQLiteRepository, first: str, second: str) -> dict:
@@ -200,7 +216,7 @@ def _comparison(repository: SQLiteRepository, first: str, second: str) -> dict:
 
 
 def _run(args) -> int:
-    ui = TerminalUI(no_color=args.no_color)
+    ui = TerminalUI(no_color=args.no_color, no_animate=args.no_animate)
     repository = (
         SQLiteRepository(args.project)
         if args.command
@@ -216,6 +232,7 @@ def _run(args) -> int:
             "worker",
             "artifacts",
         }
+        or (args.command == "guide" and args.id)
         else None
     )
     if args.command is None:
@@ -233,22 +250,21 @@ def _run(args) -> int:
             else:
                 ui.startup(args.project, len(models))
                 if ui.interactive:
-                    choice = (
-                        ui.console.input(
-                            "[1] Models  [2] Doctor  [3] Experiments  [4] Init  [Q] Quit\n› "
-                        )
-                        .strip()
-                        .lower()
-                    )
-                    selected = {"1": "models", "2": "doctor", "3": "experiment", "4": "init"}.get(
-                        choice
-                    )
-                    if selected == "experiment":
-                        args.command, args.action = "experiment", "list"
-                        return _run(args)
+                    selected = {
+                        "1": ["models"],
+                        "2": ["doctor"],
+                        "3": ["experiment", "list"],
+                        "4": ["init", "--guided"],
+                        "5": ["init"],
+                        "6": ["guide"],
+                    }.get(ui.menu())
                     if selected:
-                        args.command = selected
-                        return _run(args)
+                        global_args = ["--project", str(args.project)]
+                        if args.no_color:
+                            global_args.append("--no-color")
+                        if args.no_animate:
+                            global_args.append("--no-animate")
+                        return main(global_args + selected)
     elif args.command == "version":
         _emit({"version": __version__}, args, f"TraceAI {__version__}")
     elif args.command == "models":
@@ -271,13 +287,93 @@ def _run(args) -> int:
             _emit(data, args)
         elif not args.quiet:
             ui.doctor(data)
+    elif args.command == "guide":
+        if args.id:
+            record = repository.get(args.id)
+            experiment = Experiment(
+                load_config_from_record(record), args.project, repository, validate_dataset=False
+            )
+            data = report_guidance(experiment.report(args.id), args.project)
+        else:
+            data = setup_guidance(discover_models(), args.project)
+        if args.json:
+            _emit(data, args)
+        elif not args.quiet:
+            ui.guide(data)
     elif args.command == "init":
-        _create_file(args.path)
-        _emit(
-            {"config": str(args.path), "project": str(args.project)},
-            args,
-            f"Created {args.path} and {args.project}",
-        )
+        if args.path.exists():
+            raise ConfigurationError(f"{args.path} already exists; choose a different path")
+        if args.guided:
+            if not ui.interactive:
+                raise ConfigurationError("--guided needs a terminal; use --runtime and --model")
+            if args.json or args.quiet:
+                raise ConfigurationError(
+                    "--guided uses interactive prompts; omit --json and --quiet"
+                )
+            if (
+                args.runtime
+                or args.model
+                or args.checkpoint
+                or args.dataset
+                or args.probe
+                or args.seed is not None
+                or args.device != "auto"
+            ):
+                raise ConfigurationError("Use --guided alone, or provide model options without it")
+            choices = ui.prompt_model_study(discover_models())
+            args.runtime = choices["runtime"]
+            args.model = choices["model"]
+            args.checkpoint = choices["checkpoints"]
+            args.dataset = choices["dataset"]
+            args.probe = choices["probes"]
+            args.device = choices["device"]
+        if (
+            args.model
+            or args.runtime
+            or args.checkpoint
+            or args.dataset
+            or args.probe
+            or args.seed is not None
+            or args.device != "auto"
+        ):
+            if not args.model or not args.runtime:
+                raise ConfigurationError("A model study needs both --runtime and --model")
+            config, content = build_model_study(
+                runtime=args.runtime,
+                model=args.model,
+                checkpoint_entries=args.checkpoint,
+                dataset_path=args.dataset,
+                probes=args.probe,
+                seed=42 if args.seed is None else args.seed,
+                device=args.device,
+                output=args.path,
+            )
+            _create_file(args.path, content)
+            command_prefix = ["traceai"]
+            if args.project != Path(".traceai"):
+                command_prefix.extend(["--project", str(args.project)])
+            data = {
+                "config": str(args.path),
+                "runtime": config.target.runtime,
+                "checkpoints": [item.id for item in config.checkpoints],
+                "probes": config.probes,
+                "dataset": config.dataset,
+                "next_commands": [
+                    shlex.join(command_prefix + ["config", "validate", str(args.path)]),
+                    shlex.join(command_prefix + ["experiment", "run", str(args.path)]),
+                ],
+            }
+            if args.json:
+                _emit(data, args)
+            elif not args.quiet:
+                ui.study_created(args.path, config, args.project)
+        else:
+            _create_file(args.path)
+            _emit(
+                {"config": str(args.path), "project": str(args.project)},
+                args,
+                f"Created {args.path} and {args.project}",
+            )
     elif args.command == "inspect":
         if args.capability:
             capability = Capability(args.capability)
@@ -351,9 +447,11 @@ def _run(args) -> int:
                 args,
             )
         elif not args.quiet:
-            ui.report(experiment.report()) if ui.interactive else print(
-                render_terminal(experiment.report())
-            )
+            result = experiment.report()
+            if ui.interactive:
+                ui.report(result, args.project)
+            else:
+                print(render_terminal(result, args.project))
     elif args.command == "experiment":
         if args.action == "create":
             _create_file(args.path)
@@ -373,8 +471,13 @@ def _run(args) -> int:
             experiment = Experiment(config, args.project, repository)
             if not args.quiet and not args.json:
                 ui.experiment_start(config)
+            previous = (
+                repository.get(args.resume)
+                if args.resume and not args.quiet and not args.json
+                else None
+            )
             with (
-                ui.experiment_monitor(config)
+                ui.experiment_monitor(config, previous)
                 if not args.quiet and not args.json
                 else nullcontext(None)
             ) as monitor:
@@ -392,9 +495,11 @@ def _run(args) -> int:
             if args.json:
                 _emit(data, args)
             elif not args.quiet:
-                ui.report(experiment.report()) if ui.interactive else print(
-                    render_terminal(experiment.report())
-                )
+                result = experiment.report()
+                if ui.interactive:
+                    ui.report(result, args.project)
+                else:
+                    print(render_terminal(result, args.project))
         elif args.action == "inspect":
             record = repository.get(args.id)
             data = {
@@ -431,7 +536,7 @@ def _run(args) -> int:
             if format_name == "json"
             else render_markdown(report)
             if format_name == "markdown"
-            else render_terminal(report)
+            else render_terminal(report, args.project)
         )
         if args.output:
             if args.output.exists():
@@ -442,7 +547,10 @@ def _run(args) -> int:
             )
             _emit({"output": str(args.output)}, args, f"Wrote {args.output}")
         elif not args.quiet:
-            ui.report(report) if format_name == "terminal" and ui.interactive else print(output)
+            if format_name == "terminal" and ui.interactive:
+                ui.report(report, args.project)
+            else:
+                print(output)
     elif args.command == "compare":
         data = (
             _checkpoint_comparison(repository, args.experiment, args.first, args.second)
@@ -513,27 +621,35 @@ def _run(args) -> int:
                 else f"Valid experiment configuration: {args.file}"
             )
     elif args.command == "dataset":
-        dataset, digest = load_dataset(args.file)
-        if args.action == "calibrate":
-            data = calibrate(dataset)
-            data["sha256"] = digest
-            if args.json:
-                _emit(data, args)
-            elif not args.quiet:
-                ui.calibration(data)
-        else:
-            data = {
-                "valid": True,
-                "name": dataset.name,
-                "evaluation_cases": sum(case.split == "evaluation" for case in dataset.cases),
-                "calibration_cases": sum(case.split == "calibration" for case in dataset.cases),
-                "sha256": digest,
-            }
+        if args.action == "template":
+            _create_file(args.output, DEFAULT_DATASET_TEMPLATE)
             _emit(
-                data,
+                {"output": str(args.output), "synthetic": True},
                 args,
-                f"Valid dataset: {dataset.name} · {data['evaluation_cases']} evaluation cases · {data['calibration_cases']} calibration cases",
+                f"Created synthetic dataset template {args.output}. Replace its cases before interpreting a model result.",
             )
+        else:
+            dataset, digest = load_dataset(args.file)
+            if args.action == "calibrate":
+                data = calibrate(dataset)
+                data["sha256"] = digest
+                if args.json:
+                    _emit(data, args)
+                elif not args.quiet:
+                    ui.calibration(data)
+            else:
+                data = {
+                    "valid": True,
+                    "name": dataset.name,
+                    "evaluation_cases": sum(case.split == "evaluation" for case in dataset.cases),
+                    "calibration_cases": sum(case.split == "calibration" for case in dataset.cases),
+                    "sha256": digest,
+                }
+                _emit(
+                    data,
+                    args,
+                    f"Valid dataset: {dataset.name} · {data['evaluation_cases']} evaluation cases · {data['calibration_cases']} calibration cases",
+                )
     elif args.command == "watch":
         from traceai.watcher import CheckpointWatcher
 
@@ -562,7 +678,7 @@ def _run(args) -> int:
                 f"Updated experiment {result}",
             )
         else:
-            if not args.json and not args.quiet and ui.interactive:
+            if not args.json and not args.quiet and ui.animate:
                 with ui.watch_monitor(watcher.repository, watcher.directory) as monitor:
                     watcher.progress = monitor
                     watcher.watch(wait=monitor.wait)
@@ -687,7 +803,7 @@ def _checkpoint_comparison(
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
     # Accept common flags before or after a subcommand.
-    common_flags = {"--json", "--quiet", "--verbose", "--no-color"}
+    common_flags = {"--json", "--quiet", "--verbose", "--no-color", "--no-animate"}
     flags = [item for item in raw if item in common_flags]
     raw = flags + [item for item in raw if item not in common_flags]
     parser = _parser()

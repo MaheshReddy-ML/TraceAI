@@ -9,6 +9,7 @@
 
 <p align="center">
   <a href="#quick-start">Quick start</a> ·
+  <a href="#study-your-own-model">Your model</a> ·
   <a href="#inspect-the-evidence">Evidence</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="docs/METHODOLOGY.md">Methodology</a> ·
@@ -85,9 +86,35 @@ uv run traceai evidence show EXPERIMENT_ID CASE_ID --checkpoint 15
 uv run traceai compare 1 15 --experiment EXPERIMENT_ID
 ```
 
-`traceai init` creates a starter mock study in `experiment.yaml`. `traceai` opens a compact interactive menu in a terminal and prints a plain guide in a pipe. `--no-color` and `NO_COLOR` are supported; `--json` gives machine-readable output.
+`traceai init` creates a starter mock study in `experiment.yaml`. `traceai` opens a compact interactive menu in a terminal and prints a plain guide in a pipe. Live motion reflects completed checkpoints and actual model activity. Use `--no-animate` or `TRACEAI_NO_ANIMATION=1` to turn it off; `--no-color` and `NO_COLOR` also provide motion-free, escape-free output. `--json` gives machine-readable output.
 
 Without `uv`, install into a Python 3.12+ virtual environment with `python -m pip install -e '.[dev]'` and run `traceai` directly.
+
+## Study your own model
+
+Use the terminal guide to move from a local model to a repeatable checkpoint study:
+
+```bash
+uv run traceai guide
+uv run traceai dataset template --output cases.yaml  # edit with your held-out cases
+uv run traceai init --guided --path study.yaml
+uv run traceai config validate study.yaml
+uv run traceai experiment run study.yaml
+uv run traceai guide EXPERIMENT_ID
+```
+
+The dataset template is a **synthetic wiring example**: replace its arithmetic cases and calibration labels with independent examples from your task. The setup asks for a discovered model or local path, optional distinct checkpoints (`before=/path/to/checkpoint`), and an optional versioned cases YAML. It creates a configuration without loading weights or downloading a model. When no dataset is supplied, the starter uses **narrow built-in output proxies**. After a run, the guide highlights a descriptive change when one exists and points to a raw case to inspect; it does not prescribe a training change from an aggregate score.
+
+For scripts or CI, provide the same choices explicitly:
+
+```bash
+traceai init --runtime transformers --model /absolute/path/to/checkpoint-1 \
+  --checkpoint before=/absolute/path/to/checkpoint-1 \
+  --checkpoint after=/absolute/path/to/checkpoint-2 \
+  --dataset /absolute/path/to/your-cases.yaml --path study.yaml
+```
+
+Use different model paths or Ollama tags for compared checkpoints. Prepare your own held-out cases and calibrate their deterministic rubrics before interpreting a real-model result. See [methodology](docs/METHODOLOGY.md) and [development](DEVELOPMENT.md).
 
 ## Inspect the evidence
 
@@ -176,8 +203,9 @@ The local study engine, evidence store, dashboard, watcher, optional runtime ada
 | Command | Purpose |
 | --- | --- |
 | `traceai`, `traceai doctor`, `traceai models`, `traceai version` | Start, diagnose, discover, identify version |
-| `traceai init`, `traceai config show/validate FILE` | Create and inspect a study |
-| `traceai dataset validate/calibrate FILE` | Check cases and rubric calibration |
+| `traceai guide [ID]` | Get setup steps or evidence-led next steps for a saved run |
+| `traceai init [--guided]`, `traceai config show/validate FILE` | Create and inspect a study |
+| `traceai dataset template/validate/calibrate` | Draft cases, validate them, and check rubric calibration |
 | `traceai probe MODEL --runtime R --behavior P` | Run one built-in probe |
 | `traceai experiment create/run/list/inspect/compare` | Manage studies and compare saved runs |
 | `traceai watch DIR --config FILE` | Evaluate stable local checkpoint directories |
@@ -188,7 +216,7 @@ The local study engine, evidence store, dashboard, watcher, optional runtime ada
 | `traceai jobs submit/list/retry`, `traceai worker serve/run` | Queue independent experiments across trusted workers |
 | `traceai artifacts upload ID --destination s3://BUCKET/PREFIX` | Explicitly export completed artifacts |
 
-Use `--project DIR` to choose local storage, `--json` for scripts, `--quiet` to suppress progress, and `--no-color` for plain terminals. `traceai --help` shows exact flags. Model outputs and prompts may be sensitive; keep `.traceai` private and review exported reports before sharing.
+Use `--project DIR` to choose local storage, `--json` for scripts, `--quiet` to suppress progress, `--no-animate` to stop live motion, and `--no-color` for plain terminals. `traceai --help` shows exact flags. Model outputs and prompts may be sensitive; keep `.traceai` private and review exported reports before sharing.
 
 The research agent uses a fixed command vocabulary and has no arbitrary shell tool. For example, `traceai agent 'report EXPERIMENT_ID'` reads a saved report. Reading is confined to `--workspace`; model execution requires `--allow-run --allow-subprocess`. It is a bounded operator, not an autonomous scientific reasoner.
 

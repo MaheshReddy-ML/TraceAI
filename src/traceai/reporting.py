@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import json
+import shlex
+from pathlib import Path
 
 from traceai.schemas import Report
 
 
-def render_terminal(report: Report) -> str:
+def render_terminal(report: Report, project: Path = Path(".traceai")) -> str:
     lines = [
         f"TraceAI experiment {report.experiment_id}",
         f"Status: {report.status} | Target: {report.config.target.runtime}/{report.config.target.model}",
@@ -29,6 +31,10 @@ def render_terminal(report: Report) -> str:
     lines.append(f"\nEvidence: {len(report.evidence)} raw prompt/output records saved.")
     lines.append("\nLimitations:")
     lines.extend(f"  - {item}" for item in report.limitations)
+    command = ["traceai"]
+    if project != Path(".traceai"):
+        command.extend(["--project", str(project)])
+    lines.append(f"\nNext: {shlex.join(command + ['guide', report.experiment_id])}")
     return "\n".join(lines)
 
 
