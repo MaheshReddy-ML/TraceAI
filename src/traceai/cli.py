@@ -236,7 +236,8 @@ def _run(args) -> int:
         else None
     )
     if args.command is None:
-        models = discover_models()
+        with ui.loading("Scanning local models", enabled=not args.json and not args.quiet):
+            models = discover_models()
         if not args.quiet:
             if args.json:
                 _emit(
@@ -268,21 +269,24 @@ def _run(args) -> int:
     elif args.command == "version":
         _emit({"version": __version__}, args, f"TraceAI {__version__}")
     elif args.command == "models":
-        models = discover_models()
+        with ui.loading("Scanning local models", enabled=not args.json and not args.quiet):
+            models = discover_models()
         if args.json:
             _emit({"models": models}, args)
         elif not args.quiet:
             ui.models(models)
     elif args.command == "doctor":
-        data = {
-            "hardware": inspect_hardware(),
-            "runtimes": runtime_status(),
-            "local_models": len(discover_models()),
-            "project": str(args.project.resolve()),
-            "storage_writable": os.access(
-                args.project if args.project.exists() else args.project.parent, os.W_OK
-            ),
-        }
+        with ui.loading("Checking local system", enabled=not args.json and not args.quiet):
+            models = discover_models()
+            data = {
+                "hardware": inspect_hardware(),
+                "runtimes": runtime_status(models),
+                "local_models": len(models),
+                "project": str(args.project.resolve()),
+                "storage_writable": os.access(
+                    args.project if args.project.exists() else args.project.parent, os.W_OK
+                ),
+            }
         if args.json:
             _emit(data, args)
         elif not args.quiet:
@@ -295,7 +299,8 @@ def _run(args) -> int:
             )
             data = report_guidance(experiment.report(args.id), args.project)
         else:
-            data = setup_guidance(discover_models(), args.project)
+            with ui.loading("Scanning local models", enabled=not args.json and not args.quiet):
+                data = setup_guidance(discover_models(), args.project)
         if args.json:
             _emit(data, args)
         elif not args.quiet:
@@ -320,7 +325,9 @@ def _run(args) -> int:
                 or args.device != "auto"
             ):
                 raise ConfigurationError("Use --guided alone, or provide model options without it")
-            choices = ui.prompt_model_study(discover_models())
+            with ui.loading("Scanning local models"):
+                models = discover_models()
+            choices = ui.prompt_model_study(models)
             args.runtime = choices["runtime"]
             args.model = choices["model"]
             args.checkpoint = choices["checkpoints"]
@@ -678,7 +685,7 @@ def _run(args) -> int:
                 f"Updated experiment {result}",
             )
         else:
-            if not args.json and not args.quiet and ui.animate:
+            if not args.json and not args.quiet and ui.animate and sys.stdin.isatty():
                 with ui.watch_monitor(watcher.repository, watcher.directory) as monitor:
                     watcher.progress = monitor
                     watcher.watch(wait=monitor.wait)

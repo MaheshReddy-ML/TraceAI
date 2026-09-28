@@ -131,10 +131,13 @@ def discover_models() -> list[dict[str, str]]:
     return found
 
 
-def runtime_status() -> dict[str, bool]:
+def runtime_status(models: list[dict] | None = None) -> dict[str, bool]:
     return {
         "mlx": find_spec("mlx_lm") is not None,
         "transformers": find_spec("transformers") is not None,
         "llama_cpp": find_spec("llama_cpp") is not None,
-        "ollama": any(m["runtime"] == "ollama" for m in discover_models()),
+        "ollama": any(
+            model["runtime"] == "ollama"
+            for model in (models if models is not None else discover_models())
+        ),
     }

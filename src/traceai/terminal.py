@@ -5,6 +5,7 @@ Structured JSON and redirected text never pass through this layer.
 
 from __future__ import annotations
 
+import math
 import os
 import re
 import select
@@ -12,6 +13,7 @@ import shlex
 import sys
 import time
 from collections import defaultdict
+from contextlib import nullcontext
 from pathlib import Path
 
 from rich import box
@@ -42,6 +44,44 @@ THEME = {
     "error": "bold red",
     "accent": "magenta",
 }
+
+MENU_ITEMS = (
+    ("Find models", "Cached snapshots and installed Ollama tags"),
+    ("Check system", "Runtime and hardware readiness"),
+    ("Past studies", "Inspect saved experiments"),
+    ("Study my model", "Build a checkpoint study"),
+    ("Mock walkthrough", "Create a synthetic starter config"),
+    ("Development guide", "From local model to raw evidence"),
+)
+
+
+class SignalWave:
+    """Decorative motion; never represents a model measurement."""
+
+    def __init__(self, width: int = 64):
+        self.width = width
+
+    def __rich_console__(self, console, options):
+        width = min(self.width, max(8, options.max_width))
+        phase = time.monotonic() * 5
+        heights = "▁▂▃▄▅▆▇█"
+        samples = []
+        highlights = []
+        for position in range(width):
+            value = 3.5 + 2.3 * math.sin(position * 0.42 - phase)
+            value += 1.1 * math.sin(position * 0.16 + phase * 0.65)
+            height = max(0, min(7, round(value)))
+            samples.append(heights[height])
+            highlights.append(height >= 4)
+        line = Text("".join(samples), style="#6585c8")
+        start = None
+        for position, active in enumerate([*highlights, False]):
+            if active and start is None:
+                start = position
+            elif not active and start is not None:
+                line.stylize("#44d9dd", start, position)
+                start = None
+        yield line
 
 
 class TerminalUI:
@@ -80,6 +120,19 @@ class TerminalUI:
             markup=False,
             soft_wrap=not bool(sys.stderr.isatty()),
         )
+        self.home_project = Path(".traceai")
+        self.home_model_count = 0
+
+    @property
+    def animated_menu_available(self) -> bool:
+        return bool(
+            self.animate
+            and os.name == "posix"
+            and self.console.is_terminal
+            and self.console.width >= 40
+            and self.console.height >= 18
+            and sys.stdin.isatty()
+        )
 
     def heading(self, section: str) -> None:
         if self.interactive:
@@ -88,7 +141,18 @@ class TerminalUI:
         else:
             self.console.print(f"TRACEAI / {section.upper()}")
 
+    def loading(self, message: str, *, enabled: bool = True):
+        if not self.animate or not enabled:
+            return nullcontext()
+        return self.console.status(
+            f"◈ TRACEAI / {message.upper()}", spinner="dots", spinner_style="#66e6e8"
+        )
+
     def startup(self, project: Path, model_count: int) -> None:
+        self.home_project = project
+        self.home_model_count = model_count
+        if self.animated_menu_available:
+            return
         if not self.interactive:
             self.console.print("TraceAI — AI behavior observatory")
             self.console.print("Trace how AI models learn, behave, and change.")
@@ -110,26 +174,131 @@ class TerminalUI:
         self.console.print(Text("  ● Ready", style=THEME["success"]) + " for local experiments\n")
 
     def menu(self) -> str:
+        if self.animated_menu_available:
+            return self._animated_menu()
         table = Table.grid(padding=(0, 2))
         table.add_column(style=THEME["trace"], width=3)
         table.add_column(style=THEME["heading"])
         wide = self.console.width >= 72
         if wide:
             table.add_column(style=THEME["muted"])
-        for number, title, detail in (
-            ("1", "Find models", "Cached local snapshots and Ollama tags"),
-            ("2", "Check system", "Runtime and hardware readiness"),
-            ("3", "Past studies", "Open saved experiments"),
-            ("4", "Study my model", "Create a checkpoint study together"),
-            ("5", "Mock walkthrough", "Write the synthetic starter config"),
-            ("6", "Development guide", "Steps from local model to evidence"),
-        ):
+        for number, (title, detail) in enumerate(MENU_ITEMS, 1):
             if wide:
-                table.add_row(number, title, detail)
+                table.add_row(str(number), title, detail)
             else:
-                table.add_row(number, title)
+                table.add_row(str(number), title)
         self.console.print(Panel(table, title="CHOOSE A PATH", border_style="cyan"))
         return self.console.input("Select 1–6, or Q to quit  › ").strip().lower()
+
+    def _menu_frame(self, selected: int):
+        wide = self.console.width >= 88
+        compact = not wide or self.console.height < 20
+        intro = Text()
+        intro.append("◈ TRACEAI", style="bold #66e6e8")
+        intro.append("   /   MODEL BEHAVIOR LAB", style=THEME["muted"])
+        hero = Panel(
+            Group(
+                intro,
+                Text("Trace the evidence behind every checkpoint.", style=THEME["heading"]),
+                SignalWave(min(64, self.console.width - 8)),
+            ),
+            border_style="#48b7c8",
+            padding=(0, 1) if compact else (1, 2),
+        )
+        paths = Table.grid(expand=True, padding=(0, 1))
+        paths.add_column(width=4)
+        paths.add_column(ratio=2)
+        if wide:
+            paths.add_column(ratio=3, style=THEME["muted"])
+        for index, (title, detail) in enumerate(MENU_ITEMS):
+            active = index == selected
+            pulse = "▌" if int(time.monotonic() * 3) % 2 else "▍"
+            marker = Text(
+                f"{pulse if active else ' '} {index + 1}",
+                style="#66e6e8" if active else "dim",
+            )
+            label = Text(title, style="bold bright_white" if active else "white")
+            if wide:
+                paths.add_row(marker, label, Text(detail, style="#9cb3c9" if active else "dim"))
+            else:
+                paths.add_row(marker, label)
+        path_panel = Panel(paths, title="EXPLORE  /  SELECT A PATH", border_style="#48b7c8")
+        if compact:
+            footer = Text(
+                f"{self.home_model_count} models  ·  ↑↓ move  ·  Enter open  ·  Q quit", style="dim"
+            )
+            return Group(hero, path_panel, footer)
+        workspace = str(self.home_project.resolve())
+        home = str(Path.home())
+        if workspace == home or workspace.startswith(home + os.sep):
+            workspace = "~" + workspace[len(home) :]
+        if len(workspace) > 34:
+            workspace = "…" + workspace[-33:]
+        telemetry = Panel(
+            Group(
+                Text("LOCAL WORKSPACE", style="#66e6e8"),
+                Text(workspace, overflow="fold"),
+                Text(f"\n{self.home_model_count} model(s) discovered", style="bold bright_white"),
+                Text("Weights stay on your machine.", style=THEME["muted"]),
+                Text("\nCURRENT PATH", style="#66e6e8"),
+                Text(MENU_ITEMS[selected][0], style="bold bright_white"),
+                Text(MENU_ITEMS[selected][1], style=THEME["muted"]),
+            ),
+            border_style="#6585c8",
+            title="STATUS",
+        )
+        if wide:
+            columns = Table.grid(expand=True)
+            columns.add_column(ratio=3)
+            columns.add_column(ratio=2)
+            columns.add_row(path_panel, telemetry)
+            body = columns
+        else:
+            body = Group(path_panel, telemetry)
+        footer = Text("  ↑ / ↓  navigate     ENTER  open     1–6  jump     Q  quit", style="dim")
+        return Group(hero, body, footer)
+
+    def _animated_menu(self) -> str:
+        import termios
+        import tty
+
+        fd = sys.stdin.fileno()
+        original = termios.tcgetattr(fd)
+        selected = 3
+        try:
+            tty.setcbreak(fd)
+            with Live(
+                console=self.console,
+                screen=self.console.height >= 18,
+                transient=True,
+                refresh_per_second=12,
+                get_renderable=lambda: self._menu_frame(selected),
+            ):
+                while True:
+                    ready, _, _ = select.select([fd], [], [], 0.15)
+                    if not ready:
+                        continue
+                    key = os.read(fd, 1)
+                    if key == b"\x1b":
+                        for _ in range(2):
+                            continuation, _, _ = select.select([fd], [], [], 0.03)
+                            if continuation:
+                                key += os.read(fd, 1)
+                            else:
+                                break
+                    key = key.decode("utf-8", errors="ignore")
+                    if key in {"q", "Q", "\x03", "\x1b"}:
+                        return "q"
+                    if key in {"\r", "\n"}:
+                        return str(selected + 1)
+                    if key in {"\x1b[A", "k", "K"}:
+                        selected = (selected - 1) % len(MENU_ITEMS)
+                    elif key in {"\x1b[B", "j", "J"}:
+                        selected = (selected + 1) % len(MENU_ITEMS)
+                    elif len(key) == 1 and key in "123456":
+                        return key
+        finally:
+            termios.tcsetattr(fd, termios.TCSADRAIN, original)
 
     def prompt_model_study(self, models: list[dict]) -> dict:
         self.heading("new model study")
@@ -637,6 +806,9 @@ class LiveExperiment:
                     for probe in config.probes:
                         self.scores[probe].append(by_probe[probe])
         self.completed = len(self.completed_ids)
+        self.current_checkpoint = next(
+            (item.id for item in config.checkpoints if item.id not in self.completed_ids), None
+        )
         self.current = "Preparing experiment"
         self.started = time.monotonic()
         self.live = None
@@ -644,7 +816,10 @@ class LiveExperiment:
     def __enter__(self):
         if self.ui.animate:
             self.live = Live(
-                self._render(), console=self.ui.console, refresh_per_second=8, transient=False
+                console=self.ui.console,
+                refresh_per_second=12,
+                transient=False,
+                get_renderable=self._render,
             )
             self.live.start()
         return self
@@ -664,6 +839,10 @@ class LiveExperiment:
             checkpoint = message.rsplit(": ", 1)[-1]
             self.completed_ids.add(checkpoint)
             self.completed = len(self.completed_ids)
+            self.current_checkpoint = next(
+                (item.id for item in self.config.checkpoints if item.id not in self.completed_ids),
+                None,
+            )
             self.current = f"Checkpoint {checkpoint} saved"
         elif message.startswith("checkpoint ") and message.endswith(": already complete, skipped"):
             checkpoint = message.removeprefix("checkpoint ").removesuffix(
@@ -671,9 +850,14 @@ class LiveExperiment:
             )
             self.completed_ids.add(checkpoint)
             self.completed = len(self.completed_ids)
+            self.current_checkpoint = next(
+                (item.id for item in self.config.checkpoints if item.id not in self.completed_ids),
+                None,
+            )
             self.current = f"Checkpoint {checkpoint} already saved"
         elif message.startswith("checkpoint ") and ": " in message:
             checkpoint = message.split(": ", 1)[0]
+            self.current_checkpoint = checkpoint.removeprefix("checkpoint ")
             self.current = f"Evaluating {checkpoint}"
         elif message.startswith("model loaded: "):
             self.current = "Model loaded; evaluating cases"
@@ -700,15 +884,30 @@ class LiveExperiment:
             if complete
             else Spinner("dots", text=f"{self.current} · {int(time.monotonic() - self.started)}s")
         )
+        rail = Text()
+        for index, checkpoint in enumerate(self.config.checkpoints):
+            if index:
+                rail.append(" ─ ", style="dim")
+            if checkpoint.id in self.completed_ids:
+                rail.append(f"● {checkpoint.id}", style=THEME["success"])
+            elif checkpoint.id == self.current_checkpoint:
+                rail.append(f"◉ {checkpoint.id}", style=THEME["trace"])
+            else:
+                rail.append(f"○ {checkpoint.id}", style=THEME["muted"])
+        signal = SignalWave(min(48, self.ui.console.width - 8)) if not complete else None
         if self.ui.console.width < 70:
+            rail.truncate(max(20, self.ui.console.width - 6), overflow="ellipsis")
             lines = [
                 Text("◈ TRACEAI / RUN", style=THEME["trace"]),
                 Text(
                     f"{self.completed}/{total} checkpoints · {self.config.target.runtime.upper()}"
                 ),
+                rail,
                 progress,
                 activity,
             ]
+            if signal:
+                lines.append(signal)
             for probe in self.config.probes:
                 values = self.scores[probe]
                 value = f"{values[-1]:.0%}" if values else "pending"
@@ -736,7 +935,17 @@ class LiveExperiment:
             no_wrap=True,
         )
         return Panel(
-            Group(header, summary, checkpoint_count, progress, activity, table, events),
+            Group(
+                header,
+                summary,
+                checkpoint_count,
+                rail,
+                progress,
+                activity,
+                *([signal] if signal else []),
+                table,
+                events,
+            ),
             border_style="cyan",
         )
 
@@ -763,7 +972,10 @@ class LiveWatch:
             self.original_tty = termios.tcgetattr(sys.stdin.fileno())
             tty.setcbreak(sys.stdin.fileno())
             self.live = Live(
-                self._render(), console=self.ui.console, refresh_per_second=2, transient=False
+                console=self.ui.console,
+                refresh_per_second=10,
+                transient=False,
+                get_renderable=self._render,
             )
             self.live.start()
         return self
@@ -830,23 +1042,29 @@ class LiveWatch:
             self.live.update(self._render())
 
     def _render(self):
-        table = Table(box=box.SIMPLE, expand=True)
-        table.add_column("PROBE")
-        table.add_column("TRAJECTORY")
-        table.add_column("LATEST", justify="right")
-        for probe in sorted({item.probe for item in self.observations}):
-            by_checkpoint = {
-                item.checkpoint: item.score for item in self.observations if item.probe == probe
-            }
-            scores = [by_checkpoint[name] for name in self.checkpoints if name in by_checkpoint]
-            table.add_row(probe, sparkline(scores), f"{scores[-1]:.0%}")
+        if self.observations:
+            table = Table(box=box.SIMPLE, expand=True)
+            table.add_column("PROBE")
+            table.add_column("TRAJECTORY")
+            table.add_column("LATEST", justify="right")
+            for probe in sorted({item.probe for item in self.observations}):
+                by_checkpoint = {
+                    item.checkpoint: item.score for item in self.observations if item.probe == probe
+                }
+                scores = [by_checkpoint[name] for name in self.checkpoints if name in by_checkpoint]
+                table.add_row(probe, sparkline(scores), f"{scores[-1]:.0%}")
+        else:
+            table = Text("No saved measurements yet.", style=THEME["muted"])
         return Panel(
             Group(
                 Text("◈ TRACEAI  /  CHECKPOINT WATCH", style=THEME["trace"]),
                 Text(str(self.directory), style=THEME["muted"]),
                 Text(f"{len(self.checkpoints)} checkpoint(s) measured"),
+                SignalWave(min(48, self.ui.console.width - 8)),
                 table,
-                Text(self.message, style=THEME["heading"]),
+                Spinner("dots", text=self.message)
+                if not self.experiment_id
+                else Text(self.message, style=THEME["heading"]),
                 Text("[E] Evidence  [C] Compare  [R] Report  [Q] Quit", style=THEME["muted"]),
             ),
             border_style="cyan",

@@ -86,7 +86,9 @@ uv run traceai evidence show EXPERIMENT_ID CASE_ID --checkpoint 15
 uv run traceai compare 1 15 --experiment EXPERIMENT_ID
 ```
 
-`traceai init` creates a starter mock study in `experiment.yaml`. `traceai` opens a compact interactive menu in a terminal and prints a plain guide in a pipe. Live motion reflects completed checkpoints and actual model activity. Use `--no-animate` or `TRACEAI_NO_ANIMATION=1` to turn it off; `--no-color` and `NO_COLOR` also provide motion-free, escape-free output. `--json` gives machine-readable output.
+Run `uv run traceai` with no subcommand for the animated home screen. Use ↑/↓ and Enter or press 1–6 to jump to a path. The screen restores when you leave it. Model discovery has a live status indicator, and experiment and checkpoint watch views keep moving while work is underway. Animated waveforms are decorative; checkpoint counts and score trails come from actual saved measurements. `traceai init` creates a starter mock study in `experiment.yaml`.
+
+Use `--no-animate` or `TRACEAI_NO_ANIMATION=1` to stop motion. `--no-color` and `NO_COLOR` provide motion-free, escape-free output; redirected output stays plain. `--json` gives machine-readable output.
 
 Without `uv`, install into a Python 3.12+ virtual environment with `python -m pip install -e '.[dev]'` and run `traceai` directly.
 
